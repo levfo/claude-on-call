@@ -155,6 +155,23 @@ log every shim launch and hook relay to `~/.claude-on-call/logs/`.
 `wsl --version` shows "Catastrophic failure" or Ubuntu won't start: your WSL is
 older than the Ubuntu image; run `wsl --update` as Administrator.
 
+**"remote policy refused the request: ... permission mode is outside the machine
+remote policy" (403)** when sending from the web or by voice: Link only relays
+into sessions whose permission mode its machine policy allows. The default list
+is manual, acceptEdits, plan, auto and dontAsk. A conversation you hand off from
+a `--dangerously-skip-permissions` Claude Code is in `bypassPermissions`, which
+is not on it. Either switch the session's mode (Shift+Tab in its terminal, or
+`oncall attach <id>`) or allow it in Link's policy and restart:
+
+```sh
+# inside WSL (oncall is a thin wrapper; this is Link's own policy file)
+python3 -c "import json,os;p=os.path.expanduser('~/.local/state/sesame-link/remote-access.json');d=json.load(open(p));m=d['allowed_permission_modes'];m.append('bypassPermissions') if 'bypassPermissions' not in m else None;json.dump(d,open(p,'w'),indent=2)"
+sesame-link restart
+```
+
+Allowing it means anything you say by voice runs without permission prompts in
+those sessions, which is exactly what bypass mode already means locally.
+
 ## Contributing
 
 Issues and PRs welcome. The Windows side is PowerShell 5.1-compatible; the WSL
