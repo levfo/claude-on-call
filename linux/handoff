@@ -50,7 +50,8 @@ DECOY_DIR="$(mktemp -d)"
 cat > "$DECOY_DIR/claude" <<'SH'
 #!/bin/bash
 export PATH="$HOME/.local/bin:$PATH"
-CLAUDECODE=1 CLAUDE_CODE_SESSION_ID="$1" CLAUDE_PID=$$ exec sesame-link open-sesame
+# Must stay a child of this "claude" process (no exec): Link checks its parent.
+CLAUDECODE=1 CLAUDE_CODE_SESSION_ID="$1" CLAUDE_PID=$$ sesame-link open-sesame
 SH
 chmod +x "$DECOY_DIR/claude"
 "$DECOY_DIR/claude" "$SID"
