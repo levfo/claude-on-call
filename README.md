@@ -172,6 +172,19 @@ sesame-link restart
 Allowing it means anything you say by voice runs without permission prompts in
 those sessions, which is exactly what bypass mode already means locally.
 
+**"Held by the terminal. Something in Claude's terminal is in the way, such as a
+dialog or a draft."** Two known causes, both handled automatically by current
+versions: the folder-trust dialog (the shim now accepts it), and Claude Code's
+dim "suggested next prompt" ghost text, which loses its dim styling through WSL
+interop so Link mistakes it for an unsent draft (the shim now disables prompt
+suggestions in Link sessions). Sessions started before you updated keep the old
+behaviour until recreated: hand the conversation off again, or start a new one.
+
+**Garbage like `^[[<35;96;27M` in the shell after `/oncall`:** the hand-off
+force-closes Claude Code, which never gets to turn mouse reporting off. Current
+versions reset the console afterwards; if you see it anyway, run `oncall update`
+and, for the current window, type `reset` or open a new tab.
+
 ## Contributing
 
 Issues and PRs welcome. The Windows side is PowerShell 5.1-compatible; the WSL
