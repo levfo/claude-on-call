@@ -109,6 +109,12 @@ def main(argv):
                 for groups in doc.get("hooks", {}).values():
                     for group in groups:
                         group["hooks"] = [rewrite_command(h, prefix) for h in group.get("hooks", [])]
+                # Claude Code draws a dim "suggested next prompt" in the empty composer
+                # after each turn. Through WSL interop the dim attribute is lost, so Link
+                # reads the suggestion as an unsent draft and holds remote messages
+                # ("Held by the terminal"). Remote sessions don't need suggestions.
+                doc["promptSuggestionEnabled"] = False
+                doc.setdefault("env", {})["CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION"] = "0"
             else:
                 for server in doc.get("mcpServers", {}).values():
                     rewrite_command(server, prefix)
