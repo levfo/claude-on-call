@@ -50,6 +50,10 @@ def relay_prefix(cfg):
         os.path.join(ONCALL_HOME, "bin", "hook-relay"),
         os.environ.get("SESAME_LINK_HOOK_URL", ""),
         os.environ.get("SESAME_LINK_MCP_URL", ""),
+        # Link's working directory for this session. Link validates every hook's cwd
+        # and transcript path against it, while Windows Claude Code reports wherever
+        # the conversation has cd'd to, so the relay pins both to this folder.
+        os.getcwd(),
     ]
 
 
@@ -93,7 +97,12 @@ def pretrust(cfg, win_cwd):
 def main(argv):
     cfg = read_config()
     args = list(argv)
-    sid = args[args.index("--session-id") + 1] if "--session-id" in args else "unknown"
+    if "--session-id" in args:
+        sid = args[args.index("--session-id") + 1]
+    elif "--resume" in args and args.index("--resume") + 1 < len(args):
+        sid = "resume-" + args[args.index("--resume") + 1]
+    else:
+        sid = "launch-" + str(os.getpid())
     outdir = os.path.join(cfg["WIN_STATE"], "sessions", sid)
     os.makedirs(outdir, exist_ok=True)
     prefix = relay_prefix(cfg)

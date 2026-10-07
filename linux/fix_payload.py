@@ -82,6 +82,12 @@ def main():
 
     if "cwd" in payload:
         payload["cwd"] = to_linux(payload["cwd"])
+    # Link checks cwd against the folder it started the session in. Windows Claude Code
+    # reports the conversation's current folder, which can differ after a `cd` or a
+    # resume, and Link then refuses the hook with 403. Pin it.
+    session_cwd = os.environ.get("ONCALL_SESSION_CWD")
+    if session_cwd and payload.get("cwd"):
+        payload["cwd"] = session_cwd
 
     if payload.get("transcript_path") and payload.get("cwd") and payload.get("session_id"):
         win_transcript = to_linux(payload["transcript_path"])

@@ -17,6 +17,10 @@ ONCALL_HOME="${ONCALL_HOME:-$HOME/.claude-on-call}"
 export SESAME_LINK_HOOK_URL="$1"
 export SESAME_LINK_MCP_URL="$2"
 shift 2
+# Third argument (newer shims): Link's working directory for the session.
+case "${1:-}" in
+    /*) export ONCALL_SESSION_CWD="$1"; shift ;;
+esac
 
 SESAME_LINK="${SESAME_LINK_BIN:-$HOME/.local/bin/sesame-link}"
 LOG="$ONCALL_HOME/logs/hooks.log"

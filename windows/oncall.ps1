@@ -45,6 +45,11 @@ public static class OncallConsole {
   [DllImport("kernel32.dll", SetLastError=true)] public static extern bool SetConsoleMode(IntPtr h, uint mode);
   [DllImport("kernel32.dll", SetLastError=true)] public static extern bool WriteConsoleW(IntPtr h, string s, uint n, out uint written, IntPtr r);
   [DllImport("kernel32.dll", SetLastError=true)] public static extern bool CloseHandle(IntPtr h);
+  [DllImport("kernel32.dll", SetLastError=true)] public static extern bool FreeConsole();
+  [DllImport("kernel32.dll", SetLastError=true)] public static extern bool AttachConsole(uint pid);
+  // Claude Code runs slash-command shells in a hidden console of their own, so CONIN$/CONOUT$
+  // here are not the user's terminal. Attach to the console of the Claude Code process first.
+  public static bool AttachTo(uint pid) { FreeConsole(); return AttachConsole(pid); }
   [StructLayout(LayoutKind.Sequential, CharSet=CharSet.Unicode)]
   public struct KEY_EVENT_RECORD { public int bKeyDown; public ushort wRepeatCount; public ushort wVirtualKeyCode; public ushort wVirtualScanCode; public char UnicodeChar; public uint dwControlKeyState; }
   [StructLayout(LayoutKind.Explicit)]
@@ -116,8 +121,9 @@ function Close-OriginalClaude([int]$ClaudePid, [string]$Message) {
     $helper = Load-ConsoleHelper
     if ($helper) {
         try {
+            $attached = [OncallConsole]::AttachTo([uint32]$ClaudePid)
             if ($Message) { [OncallConsole]::Say("`r`n" + $Message + "`r`n") }
-            [OncallConsole]::CtrlCTwice()
+            if ($attached) { [OncallConsole]::CtrlCTwice() }
         } catch { }
         for ($i = 0; $i -lt 20; $i++) {
             Start-Sleep -Milliseconds 250
