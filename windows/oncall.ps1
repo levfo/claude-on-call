@@ -34,6 +34,42 @@ function Run-Wsl([string]$BashCommand, [switch]$Here, [string]$Folder) {
     $script:LastExit = $LASTEXITCODE
 }
 
+function Reset-ConsoleModes {
+    # Claude Code turns on mouse reporting, focus events and bracketed paste in the
+    # terminal. Killed mid-flight it never turns them off, and the shell underneath
+    # then sees every mouse move as text like ^[[<35;96;27M. Our stdout is a pipe
+    # (Claude Code captures the command's output), so write straight to the console.
+    $Esc = [char]27
+    $seq = "$Esc[?1000l$Esc[?1002l$Esc[?1003l$Esc[?1004l$Esc[?1005l$Esc[?1006l$Esc[?1015l$Esc[?2004l$Esc[?25h"
+    try {
+        $sig = @"
+using System; using System.Runtime.InteropServices;
+public static class OncallConsole {
+  [DllImport("kernel32.dll", SetLastError=true, CharSet=CharSet.Unicode)]
+  public static extern IntPtr CreateFileW(string name, uint access, uint share, IntPtr sec, uint disp, uint flags, IntPtr tmpl);
+  [DllImport("kernel32.dll", SetLastError=true)] public static extern bool GetConsoleMode(IntPtr h, out uint mode);
+  [DllImport("kernel32.dll", SetLastError=true)] public static extern bool SetConsoleMode(IntPtr h, uint mode);
+  [DllImport("kernel32.dll", SetLastError=true)] public static extern bool WriteConsoleW(IntPtr h, string s, uint n, out uint written, IntPtr r);
+  [DllImport("kernel32.dll", SetLastError=true)] public static extern bool CloseHandle(IntPtr h);
+  public static void Reset(string seq) {
+    IntPtr h = CreateFileW("CONOUT$", 0xC0000000, 3, IntPtr.Zero, 3, 0, IntPtr.Zero);
+    if (h == IntPtr.Zero || h.ToInt64() == -1) return;
+    uint mode; if (GetConsoleMode(h, out mode)) SetConsoleMode(h, mode | 0x0004);  // ENABLE_VIRTUAL_TERMINAL_PROCESSING
+    uint w; WriteConsoleW(h, seq, (uint)seq.Length, out w, IntPtr.Zero);
+    CloseHandle(h);
+    IntPtr i = CreateFileW("CONIN$", 0xC0000000, 3, IntPtr.Zero, 3, 0, IntPtr.Zero);
+    if (i != IntPtr.Zero && i.ToInt64() != -1) {
+      uint im; if (GetConsoleMode(i, out im)) SetConsoleMode(i, (im & ~0x0010u & ~0x0200u) | 0x0002 | 0x0004 | 0x0001); // mouse off, VT input off; line, echo, processed on
+      CloseHandle(i);
+    }
+  }
+}
+"@
+        if (-not ("OncallConsole" -as [type])) { Add-Type -TypeDefinition $sig -ErrorAction Stop }
+        [OncallConsole]::Reset($seq)
+    } catch { }
+}
+
 $extra = Bash-Args $Rest
 switch ($Command.ToLower()) {
     "status"   { Run-Wsl "sesame-link status $extra" }
@@ -64,6 +100,8 @@ switch ($Command.ToLower()) {
             Write-Host "Closing this Claude Code; the conversation continues in Sesame."
             Start-Sleep -Seconds 2
             Stop-Process -Id ([int]$Rest[2]) -Force -ErrorAction SilentlyContinue
+            Start-Sleep -Milliseconds 500
+            Reset-ConsoleModes
         }
     }
     "web"      { Start-Process "https://link.sesame.com" }

@@ -15,6 +15,7 @@ does not fire on DrvFs mounts). On SessionEnd the mirror is stopped.
 
 Reads the payload on stdin, writes the fixed payload on stdout.
 """
+import fcntl
 import json
 import os
 import re
@@ -90,12 +91,16 @@ def main():
         os.makedirs(project_dir, exist_ok=True)
         if os.path.islink(mirror):
             os.unlink(mirror)
-        if payload.get("hook_event_name") == "SessionEnd":
-            # Give the mirror a moment to catch the final lines, then stop it.
-            subprocess.call(["sleep", "0.5"])
-            stop_mirror(pidfile)
-        elif not mirror_alive(pidfile):
-            start_mirror(win_transcript, mirror, pidfile)
+        # Hooks fire concurrently (SessionStart and friends land together), so
+        # serialize mirror management or two tails end up writing the same file.
+        with open(mirror + ".lock", "w") as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX)
+            if payload.get("hook_event_name") == "SessionEnd":
+                # Give the mirror a moment to catch the final lines, then stop it.
+                subprocess.call(["sleep", "0.5"])
+                stop_mirror(pidfile)
+            elif not mirror_alive(pidfile):
+                start_mirror(win_transcript, mirror, pidfile)
         payload["transcript_path"] = mirror
 
     sys.stdout.write(json.dumps(payload))
