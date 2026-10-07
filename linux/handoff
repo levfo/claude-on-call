@@ -29,18 +29,42 @@ if ! sesame-link status >/dev/null 2>&1; then
     echo "claude-on-call: Sesame Link isn't running. Run: oncall start"; exit 1
 fi
 
-# 1. Transcript: Windows location -> the Linux path Link expects (a real file).
-WIN_CWD="$(wslpath -w "$PWD")"
-encode() { printf '%s' "$1" | sed 's/[^A-Za-z0-9]/-/g'; }
-WIN_TRANSCRIPT="$WIN_HOME/.claude/projects/$(encode "$WIN_CWD")/$SID.jsonl"
-LINUX_DIR="$HOME/.claude/projects/$(encode "$PWD")"
-LINUX_TRANSCRIPT="$LINUX_DIR/$SID.jsonl"
-if [ ! -s "$WIN_TRANSCRIPT" ]; then
-    echo "claude-on-call: couldn't find this conversation's transcript at"
-    echo "  $(wslpath -w "$WIN_TRANSCRIPT")"
+# 1. Find the conversation's transcript. Claude Code files it under the folder the
+#    session started in, which may differ from the current folder, so search by id.
+WIN_TRANSCRIPT="$(ls "$WIN_HOME"/.claude/projects/*/"$SID".jsonl 2>/dev/null | head -1)"
+if [ -z "$WIN_TRANSCRIPT" ] || [ ! -s "$WIN_TRANSCRIPT" ]; then
+    echo "claude-on-call: couldn't find a transcript for session $SID under"
+    echo "  $(wslpath -w "$WIN_HOME")\\.claude\\projects"
     echo "Send one message in the conversation first, then run /oncall again."
     exit 1
 fi
+
+# The Link session should live in the folder the conversation was running in, which
+# the transcript records. Fall back to the current folder.
+CONV_CWD_WIN="$(python3 - "$WIN_TRANSCRIPT" <<'PY'
+import json, sys
+last = None
+for line in open(sys.argv[1], encoding="utf-8", errors="ignore"):
+    if '"cwd"' not in line:
+        continue
+    try:
+        d = json.loads(line)
+    except Exception:
+        continue
+    if isinstance(d.get("cwd"), str) and d["cwd"]:
+        last = d["cwd"]
+print(last or "")
+PY
+)"
+if [ -n "$CONV_CWD_WIN" ]; then
+    CONV_CWD="$(wslpath -u "$CONV_CWD_WIN" 2>/dev/null)"
+    [ -d "$CONV_CWD" ] && cd "$CONV_CWD"
+fi
+
+# Copy it to the Linux path Link expects (a real file, not a symlink).
+encode() { printf '%s' "$1" | sed 's/[^A-Za-z0-9]/-/g'; }
+LINUX_DIR="$HOME/.claude/projects/$(encode "$PWD")"
+LINUX_TRANSCRIPT="$LINUX_DIR/$SID.jsonl"
 mkdir -p "$LINUX_DIR"
 [ -L "$LINUX_TRANSCRIPT" ] && rm -f "$LINUX_TRANSCRIPT"
 cp "$WIN_TRANSCRIPT" "$LINUX_TRANSCRIPT"
