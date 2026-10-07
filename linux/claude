@@ -1,0 +1,10 @@
+#!/bin/bash
+# claude-on-call: `claude` on the WSL PATH that runs the Windows-native Claude Code.
+# Lets Sesame Link's installer and status checks find a working Claude Code
+# inside WSL without installing a second, separately signed-in copy there.
+ONCALL_HOME="${ONCALL_HOME:-$HOME/.claude-on-call}"
+# shellcheck disable=SC1090
+. "$ONCALL_HOME/config"
+export WT_SESSION="${WT_SESSION:-claude-on-call}" TERM=xterm-256color COLORTERM=truecolor LANG="${LANG:-en_US.UTF-8}"
+export WSLENV="${WSLENV:+$WSLENV:}WT_SESSION:TERM:COLORTERM:LANG"
+exec "$WIN_CLAUDE" "$@"

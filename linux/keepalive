@@ -1,0 +1,12 @@
+#!/bin/bash
+# claude-on-call: started hidden at Windows sign-in. WSL shuts a distro down
+# when nothing from Windows is attached to it, which would take the sesame-link
+# daemon (and every session) down with it. This starts the daemon and then
+# simply stays attached.
+ONCALL_HOME="${ONCALL_HOME:-$HOME/.claude-on-call}"
+# shellcheck disable=SC1090
+. "$ONCALL_HOME/config"
+export PATH="$HOME/.local/bin:$ONCALL_HOME/bin:$PATH"
+cd "$WIN_HOME" 2>/dev/null || cd ~
+sesame-link start --open-terminal off --claude-executable "$ONCALL_HOME/bin/claude-shim" >/dev/null 2>&1
+exec sleep infinity

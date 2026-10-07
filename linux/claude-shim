@@ -1,0 +1,58 @@
+#!/bin/bash
+# claude-on-call: the "claude" that Sesame Link launches inside WSL.
+#
+# Sesame Link runs this as if it were Claude Code:
+#   claude-shim --session-id <id> --settings <gen.json> --mcp-config <gen.json> [more claude args]
+# We rewrite the generated settings and MCP config so every hook and MCP server
+# call that Link expects to run on Linux is relayed back from Windows through
+# wsl.exe, then exec the Windows-native Claude Code binary via WSL interop.
+# Windows Claude Code then runs inside Link's tmux pane with the Windows
+# filesystem, Windows credentials and Windows MCP servers.
+
+set -u
+ONCALL_HOME="${ONCALL_HOME:-$HOME/.claude-on-call}"
+CONFIG="$ONCALL_HOME/config"
+if [ ! -f "$CONFIG" ]; then
+    echo "claude-on-call: missing $CONFIG; run the installer again" >&2
+    exit 1
+fi
+# shellcheck disable=SC1090
+. "$CONFIG"
+
+if [ -z "${WIN_CLAUDE:-}" ] || [ ! -x "$WIN_CLAUDE" ]; then
+    echo "claude-on-call: Windows Claude Code not found at '${WIN_CLAUDE:-}' (set WIN_CLAUDE in $CONFIG)" >&2
+    exit 1
+fi
+
+# Version probes and anything without Link's generated files pass straight through.
+case " $* " in
+    *" --settings "*) ;;
+    *) exec "$WIN_CLAUDE" "$@" ;;
+esac
+
+if [ "${ONCALL_DEBUG:-0}" = "1" ]; then
+    mkdir -p "$ONCALL_HOME/logs"
+    echo "$(date -Is) shim pwd=$PWD args: $*" >> "$ONCALL_HOME/logs/shim.log"
+fi
+
+# Rewrite the generated files. Output: one argument per line.
+REWRITTEN="$(python3 "$ONCALL_HOME/bin/rewrite_launch.py" "$@")" || {
+    echo "claude-on-call: could not rewrite Sesame Link's launch files" >&2
+    exit 1
+}
+mapfile -t ARGS <<< "$REWRITTEN"
+
+# Make the Windows TUI draw the same prompt glyphs as on macOS/Linux. Link
+# looks for the idle prompt on screen before it types into the session, and
+# the Windows build only uses Unicode glyphs when it believes it is inside a
+# capable terminal.
+export WT_SESSION="${WT_SESSION:-claude-on-call}"
+export TERM=xterm-256color
+export COLORTERM=truecolor
+export LANG="${LANG:-en_US.UTF-8}"
+export WSLENV="${WSLENV:+$WSLENV:}WT_SESSION:TERM:COLORTERM:LANG"
+
+if [ "${ONCALL_DEBUG:-0}" = "1" ]; then
+    echo "$(date -Is) exec $WIN_CLAUDE $(printf '[%s] ' "${ARGS[@]}")" >> "$ONCALL_HOME/logs/shim.log"
+fi
+exec "$WIN_CLAUDE" "${ARGS[@]}"

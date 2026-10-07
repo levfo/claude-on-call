@@ -1,0 +1,40 @@
+#!/bin/bash
+# claude-on-call: relay a Claude Code hook or MCP connection from Windows back
+# to the sesame-link daemon running in WSL.
+#
+# Invoked (via wsl.exe) as:
+#   hook-relay <SESAME_LINK_HOOK_URL> <SESAME_LINK_MCP_URL> hook-forward|mcp-forward <sesame-link args...>
+#
+# Windows Claude Code calls this for every hook event with the hook payload on
+# stdin and expects the hook's JSON response on stdout, so this must stay fast
+# and must never print anything else.
+
+set -u
+ONCALL_HOME="${ONCALL_HOME:-$HOME/.claude-on-call}"
+# shellcheck disable=SC1090
+. "$ONCALL_HOME/config"
+
+export SESAME_LINK_HOOK_URL="$1"
+export SESAME_LINK_MCP_URL="$2"
+shift 2
+
+SESAME_LINK="${SESAME_LINK_BIN:-$HOME/.local/bin/sesame-link}"
+LOG="$ONCALL_HOME/logs/hooks.log"
+
+if [ "$1" != "hook-forward" ]; then
+    # MCP server: plain stdio pass-through.
+    exec "$SESAME_LINK" "$@"
+fi
+
+FIXED="$(python3 "$ONCALL_HOME/bin/fix_payload.py" 2>>"$LOG")" || exit 0
+
+if [ "${ONCALL_DEBUG:-0}" = "1" ]; then
+    EV="$(printf '%s' "$FIXED" | python3 -c 'import sys,json
+d=json.loads(sys.stdin.read() or "{}"); print(d.get("hook_event_name",""), d.get("notification_type",""), d.get("tool_name",""))' 2>/dev/null)"
+    RESP="$(printf '%s' "$FIXED" | "$SESAME_LINK" "$@" 2>>"$LOG")"; RC=$?
+    printf '%s relay %s rc=%s resp=%s\n' "$(date -Is)" "[$EV]" "$RC" "$(printf '%s' "$RESP" | cut -c1-200)" >> "$LOG"
+    printf '%s' "$RESP"
+    exit $RC
+fi
+
+printf '%s' "$FIXED" | exec "$SESAME_LINK" "$@"

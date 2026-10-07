@@ -1,0 +1,64 @@
+#!/bin/bash
+# claude-on-call: hand a Windows Claude Code conversation to Sesame Link.
+#
+#   handoff <claude-session-id>      (run in the conversation's folder)
+#
+# Sesame Link's own /open-sesame does this for Linux/macOS Claude Code: it finds
+# the Claude process it was called from (its parent), checks the conversation's
+# transcript exists, creates a Link session that resumes the same conversation,
+# and ends the original. From Windows the original Claude is a Windows process
+# Link cannot see, and the transcript lives under the Windows home. So we:
+#   1. copy the Windows transcript to the path Link expects on the Linux side,
+#   2. run `sesame-link open-sesame` from inside a placeholder process named
+#      `claude` that stands in for the Windows one,
+# and the new Link session resumes the conversation through the shim, which runs
+# Windows Claude Code with `--resume <id>` in the same folder.
+set -u
+ONCALL_HOME="${ONCALL_HOME:-$HOME/.claude-on-call}"
+# shellcheck disable=SC1090
+. "$ONCALL_HOME/config"
+export PATH="$HOME/.local/bin:$ONCALL_HOME/bin:$PATH"
+
+SID="${1:-}"
+case "$SID" in
+    [0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F]-*) ;;
+    *) echo "claude-on-call: expected a Claude Code session id, got '${SID}'"; exit 2 ;;
+esac
+
+if ! sesame-link status >/dev/null 2>&1; then
+    echo "claude-on-call: Sesame Link isn't running. Run: oncall start"; exit 1
+fi
+
+# 1. Transcript: Windows location -> the Linux path Link expects (a real file).
+WIN_CWD="$(wslpath -w "$PWD")"
+encode() { printf '%s' "$1" | sed 's/[^A-Za-z0-9]/-/g'; }
+WIN_TRANSCRIPT="$WIN_HOME/.claude/projects/$(encode "$WIN_CWD")/$SID.jsonl"
+LINUX_DIR="$HOME/.claude/projects/$(encode "$PWD")"
+LINUX_TRANSCRIPT="$LINUX_DIR/$SID.jsonl"
+if [ ! -s "$WIN_TRANSCRIPT" ]; then
+    echo "claude-on-call: couldn't find this conversation's transcript at"
+    echo "  $(wslpath -w "$WIN_TRANSCRIPT")"
+    echo "Send one message in the conversation first, then run /oncall again."
+    exit 1
+fi
+mkdir -p "$LINUX_DIR"
+[ -L "$LINUX_TRANSCRIPT" ] && rm -f "$LINUX_TRANSCRIPT"
+cp "$WIN_TRANSCRIPT" "$LINUX_TRANSCRIPT"
+
+# 2. A placeholder "claude" process for Link to find as the caller and end.
+DECOY_DIR="$(mktemp -d)"
+cat > "$DECOY_DIR/claude" <<'SH'
+#!/bin/bash
+export PATH="$HOME/.local/bin:$PATH"
+CLAUDECODE=1 CLAUDE_CODE_SESSION_ID="$1" CLAUDE_PID=$$ exec sesame-link open-sesame
+SH
+chmod +x "$DECOY_DIR/claude"
+"$DECOY_DIR/claude" "$SID"
+RC=$?
+rm -rf "$DECOY_DIR"
+if [ $RC -eq 0 ]; then
+    echo
+    echo "This conversation now continues in Sesame. You can close this Claude Code window;"
+    echo "pick the session up at https://link.sesame.com or by voice."
+fi
+exit $RC
