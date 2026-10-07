@@ -34,16 +34,10 @@ function Run-Wsl([string]$BashCommand, [switch]$Here, [string]$Folder) {
     $script:LastExit = $LASTEXITCODE
 }
 
-function Reset-ConsoleModes {
-    # Claude Code turns on mouse reporting, focus events and bracketed paste in the
-    # terminal. Killed mid-flight it never turns them off, and the shell underneath
-    # then sees every mouse move as text like ^[[<35;96;27M. Our stdout is a pipe
-    # (Claude Code captures the command's output), so write straight to the console.
-    $Esc = [char]27
-    $seq = "$Esc[?1000l$Esc[?1002l$Esc[?1003l$Esc[?1004l$Esc[?1005l$Esc[?1006l$Esc[?1015l$Esc[?2004l$Esc[?25h"
-    try {
-        $sig = @"
-using System; using System.Runtime.InteropServices;
+function Load-ConsoleHelper {
+    if ("OncallConsole" -as [type]) { return $true }
+    $sig = @"
+using System; using System.Runtime.InteropServices; using System.Threading;
 public static class OncallConsole {
   [DllImport("kernel32.dll", SetLastError=true, CharSet=CharSet.Unicode)]
   public static extern IntPtr CreateFileW(string name, uint access, uint share, IntPtr sec, uint disp, uint flags, IntPtr tmpl);
@@ -51,23 +45,89 @@ public static class OncallConsole {
   [DllImport("kernel32.dll", SetLastError=true)] public static extern bool SetConsoleMode(IntPtr h, uint mode);
   [DllImport("kernel32.dll", SetLastError=true)] public static extern bool WriteConsoleW(IntPtr h, string s, uint n, out uint written, IntPtr r);
   [DllImport("kernel32.dll", SetLastError=true)] public static extern bool CloseHandle(IntPtr h);
+  [StructLayout(LayoutKind.Sequential, CharSet=CharSet.Unicode)]
+  public struct KEY_EVENT_RECORD { public int bKeyDown; public ushort wRepeatCount; public ushort wVirtualKeyCode; public ushort wVirtualScanCode; public char UnicodeChar; public uint dwControlKeyState; }
+  [StructLayout(LayoutKind.Explicit)]
+  public struct INPUT_RECORD { [FieldOffset(0)] public ushort EventType; [FieldOffset(4)] public KEY_EVENT_RECORD KeyEvent; }
+  [DllImport("kernel32.dll", SetLastError=true)] public static extern bool WriteConsoleInputW(IntPtr h, INPUT_RECORD[] buf, uint n, out uint written);
+
+  static IntPtr Open(string name) { IntPtr h = CreateFileW(name, 0xC0000000, 3, IntPtr.Zero, 3, 0, IntPtr.Zero); return (h.ToInt64() == -1) ? IntPtr.Zero : h; }
+
+  // Turn off mouse reporting, focus events and bracketed paste in the terminal
+  // and put the console input mode back to a plain shell's expectations.
   public static void Reset(string seq) {
-    IntPtr h = CreateFileW("CONOUT$", 0xC0000000, 3, IntPtr.Zero, 3, 0, IntPtr.Zero);
-    if (h == IntPtr.Zero || h.ToInt64() == -1) return;
-    uint mode; if (GetConsoleMode(h, out mode)) SetConsoleMode(h, mode | 0x0004);  // ENABLE_VIRTUAL_TERMINAL_PROCESSING
-    uint w; WriteConsoleW(h, seq, (uint)seq.Length, out w, IntPtr.Zero);
-    CloseHandle(h);
-    IntPtr i = CreateFileW("CONIN$", 0xC0000000, 3, IntPtr.Zero, 3, 0, IntPtr.Zero);
-    if (i != IntPtr.Zero && i.ToInt64() != -1) {
+    IntPtr h = Open("CONOUT$");
+    if (h != IntPtr.Zero) {
+      uint mode; if (GetConsoleMode(h, out mode)) SetConsoleMode(h, mode | 0x0004);  // ENABLE_VIRTUAL_TERMINAL_PROCESSING
+      uint w; WriteConsoleW(h, seq, (uint)seq.Length, out w, IntPtr.Zero);
+      CloseHandle(h);
+    }
+    IntPtr i = Open("CONIN$");
+    if (i != IntPtr.Zero) {
       uint im; if (GetConsoleMode(i, out im)) SetConsoleMode(i, (im & ~0x0010u & ~0x0200u) | 0x0002 | 0x0004 | 0x0001); // mouse off, VT input off; line, echo, processed on
       CloseHandle(i);
     }
   }
+
+  // Type a key `times` times into this console's shared input buffer, as if pressed on
+  // the keyboard. All presses go in one write so nothing can interrupt between them.
+  public static bool TypeKey(ushort vk, char ch, uint ctrlState, int times) {
+    IntPtr i = Open("CONIN$"); if (i == IntPtr.Zero) return false;
+    INPUT_RECORD[] recs = new INPUT_RECORD[2 * times];
+    for (int k = 0; k < recs.Length; k++) {
+      recs[k].EventType = 1; // KEY_EVENT
+      recs[k].KeyEvent.bKeyDown = (k % 2 == 0) ? 1 : 0;
+      recs[k].KeyEvent.wRepeatCount = 1;
+      recs[k].KeyEvent.wVirtualKeyCode = vk;
+      recs[k].KeyEvent.wVirtualScanCode = 0;
+      recs[k].KeyEvent.UnicodeChar = ch;
+      recs[k].KeyEvent.dwControlKeyState = ctrlState;
+    }
+    uint written; bool ok = WriteConsoleInputW(i, recs, (uint)recs.Length, out written);
+    CloseHandle(i); return ok;
+  }
+  public static void CtrlCTwice() { TypeKey(0x43, (char)3, 0x0008, 2); } // 'C' with LEFT_CTRL_PRESSED
+
+  // Print straight to the console (our stdout is Claude Code's capture pipe).
+  public static void Say(string text) {
+    IntPtr h = Open("CONOUT$"); if (h == IntPtr.Zero) return;
+    uint w; WriteConsoleW(h, text, (uint)text.Length, out w, IntPtr.Zero); CloseHandle(h);
+  }
 }
 "@
-        if (-not ("OncallConsole" -as [type])) { Add-Type -TypeDefinition $sig -ErrorAction Stop }
-        [OncallConsole]::Reset($seq)
-    } catch { }
+    try { Add-Type -TypeDefinition $sig -ErrorAction Stop; return $true } catch { return $false }
+}
+
+$script:ResetSeq = "$([char]27)[?1000l$([char]27)[?1002l$([char]27)[?1003l$([char]27)[?1004l$([char]27)[?1005l$([char]27)[?1006l$([char]27)[?1015l$([char]27)[?2004l$([char]27)[?25h"
+
+function Reset-ConsoleModes {
+    # Claude Code turns on mouse reporting, focus events and bracketed paste in the
+    # terminal. If it dies without turning them off, the shell underneath sees every
+    # mouse move as text like ^[[<35;96;27M. Our stdout is a pipe (Claude Code
+    # captures the command's output), so write straight to the console.
+    if (Load-ConsoleHelper) { try { [OncallConsole]::Reset($script:ResetSeq) } catch { } }
+}
+
+function Close-OriginalClaude([int]$ClaudePid, [string]$Message) {
+    # Prefer a graceful exit: two Ctrl+C keypresses make Claude Code quit and restore
+    # the terminal itself, exactly as if the user had pressed them. Claude Code may
+    # end this process as part of exiting, so say our piece on the console first.
+    # Fall back to killing it, with a terminal reset before and after.
+    $helper = Load-ConsoleHelper
+    if ($helper) {
+        try {
+            if ($Message) { [OncallConsole]::Say("`r`n" + $Message + "`r`n") }
+            [OncallConsole]::CtrlCTwice()
+        } catch { }
+        for ($i = 0; $i -lt 20; $i++) {
+            Start-Sleep -Milliseconds 250
+            if (-not (Get-Process -Id $ClaudePid -ErrorAction SilentlyContinue)) { return }
+        }
+    }
+    Reset-ConsoleModes
+    Stop-Process -Id $ClaudePid -Force -ErrorAction SilentlyContinue
+    Start-Sleep -Milliseconds 500
+    Reset-ConsoleModes
 }
 
 $extra = Bash-Args $Rest
@@ -98,13 +158,17 @@ switch ($Command.ToLower()) {
         # Windows, so end it ourselves, but only once the new session really exists.
         if ($script:LastExit -eq 0 -and $Rest.Count -ge 3 -and $Rest[2] -match '^\d+$') {
             Write-Host "Closing this Claude Code; the conversation continues in Sesame."
-            Start-Sleep -Seconds 2
-            Stop-Process -Id ([int]$Rest[2]) -Force -ErrorAction SilentlyContinue
-            Start-Sleep -Milliseconds 500
-            Reset-ConsoleModes
+            Start-Sleep -Seconds 1
+            Close-OriginalClaude ([int]$Rest[2]) "claude-on-call: this conversation now continues in Sesame (https://link.sesame.com). Closing this Claude Code."
         }
     }
     "web"      { Start-Process "https://link.sesame.com" }
+    "fix-terminal" {
+        # Repair a console left with mouse reporting on (garbage like ^[[<35;96;27M).
+        Reset-ConsoleModes
+        Write-Host "Terminal modes reset."
+        $script:LastExit = 0
+    }
     "update"   {
         Write-Host "Re-running the installer..."
         Invoke-Expression (Invoke-RestMethod "https://raw.githubusercontent.com/levfo/claude-on-call/main/windows/install.ps1")

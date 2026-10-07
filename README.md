@@ -180,10 +180,12 @@ interop so Link mistakes it for an unsent draft (the shim now disables prompt
 suggestions in Link sessions). Sessions started before you updated keep the old
 behaviour until recreated: hand the conversation off again, or start a new one.
 
-**Garbage like `^[[<35;96;27M` in the shell after `/oncall`:** the hand-off
-force-closes Claude Code, which never gets to turn mouse reporting off. Current
-versions reset the console afterwards; if you see it anyway, run `oncall update`
-and, for the current window, type `reset` or open a new tab.
+**Garbage like `^[[<35;96;27M` in the shell after `/oncall`:** an earlier
+version force-killed Claude Code, which never got to turn mouse reporting off.
+Current versions close Claude Code the way you would (two Ctrl+C keypresses,
+injected into its console), so it restores the terminal itself, and reset the
+console if a force-close is ever needed. For a window that is already flooded,
+open a new tab, or run `oncall fix-terminal` in it if you can get a command in.
 
 ## Contributing
 
