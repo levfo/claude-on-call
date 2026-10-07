@@ -70,27 +70,38 @@ mkdir -p "$LINUX_DIR"
 cp "$WIN_TRANSCRIPT" "$LINUX_TRANSCRIPT"
 
 # 2. A placeholder "claude" process for Link to find as the caller and end.
+#    Link answers open-sesame, then (asynchronously) ends that process and launches
+#    the resumed session. If the placeholder has already exited on its own by then,
+#    Link treats the conversation as gone and launches nothing, so the placeholder
+#    must stay alive until Link ends it (or we clean it up at the end).
 DECOY_DIR="$(mktemp -d)"
 cat > "$DECOY_DIR/claude" <<'SH'
 #!/bin/bash
 export PATH="$HOME/.local/bin:$PATH"
 # Must stay a child of this "claude" process (no exec): Link checks its parent.
-CLAUDECODE=1 CLAUDE_CODE_SESSION_ID="$1" CLAUDE_PID=$$ sesame-link open-sesame
+CLAUDECODE=1 CLAUDE_CODE_SESSION_ID="$1" CLAUDE_PID=$$ sesame-link open-sesame > "$2" 2>&1
+echo "$?" > "$2.rc"
+sleep 120
 SH
 chmod +x "$DECOY_DIR/claude"
-list_ids() { sesame-link sessions 2>/dev/null | awk 'NR>1 && $1 ~ /^[0-9]+$/ {for (i=1;i<=NF;i++) if ($i ~ /^[0-9a-f]{8}$/) {print $i; break}}'; }
-BEFORE="$(list_ids)"
+# Session id prefixes from the table (grep, not awk: Ubuntu's mawk lacks {n} quantifiers).
+list_ids() { sesame-link sessions 2>/dev/null | grep -oE '^ *[0-9]+ +.*' | grep -oE ' [0-9a-f]{8} ' | tr -d ' '; }
+BEFORE=" $(list_ids | tr '\n' ' ') "
 
-"$DECOY_DIR/claude" "$SID"
-RC=$?
-rm -rf "$DECOY_DIR"
-[ $RC -eq 0 ] || exit $RC
+"$DECOY_DIR/claude" "$SID" "$DECOY_DIR/out" </dev/null &
+DECOY=$!
+cleanup() { kill "$DECOY" 2>/dev/null; rm -rf "$DECOY_DIR"; }
+trap cleanup EXIT
+for _ in $(seq 1 60); do [ -f "$DECOY_DIR/out.rc" ] && break; sleep 0.5; done
+cat "$DECOY_DIR/out" 2>/dev/null
+RC="$(cat "$DECOY_DIR/out.rc" 2>/dev/null || echo 1)"
+[ "$RC" -eq 0 ] || exit "$RC"
 
 # 3. Confirm the new Link session actually appeared before anyone closes the original.
 NEW=""
 for _ in $(seq 1 25); do
     for id in $(list_ids); do
-        case " $BEFORE " in *" $id "*) ;; *) NEW="$id" ;; esac
+        case "$BEFORE" in *" $id "*) ;; *) NEW="$id" ;; esac
     done
     [ -n "$NEW" ] && break
     sleep 1
