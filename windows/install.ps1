@@ -205,7 +205,7 @@ if ($status -match "isn't signed in|not signed in") {
         Step "Signing in to Sesame (enter the code it shows at the link)"
         & wsl.exe -d $Distro -u $LinuxUser -- bash -lc "sesame-link auth login"
         Step "Starting Sesame Link"
-        & wsl.exe -d $Distro -u $LinuxUser -- bash -lc "cd '$homeWsl' && sesame-link restart >/dev/null 2>&1 || sesame-link start --open-terminal off --claude-executable `$HOME/.claude-on-call/bin/claude-shim"
+        & wsl.exe -d $Distro -u $LinuxUser -- bash -lc "~/.claude-on-call/bin/start-link"
     }
 }
 

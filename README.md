@@ -25,7 +25,7 @@ On a Mac, Link already works. claude-on-call adds the `oncall` command and the
 | **Voice** | Call Maya or Miles in the Sesame app, ask what your sessions are doing, tell one to continue, approve its tool use. |
 | **Any device** | link.sesame.com shows every session with live transcript and state, from your phone or another computer. |
 | **Native Windows** | Sessions run the Windows Claude Code binary in your Windows folders. No second Claude install, no second sign-in, no `/mnt/c` paths in your prompts. |
-| **Hand-off** | Type `/oncall` in any Claude Code session to move that conversation to Sesame, then pick it up by voice. |
+| **Hand-off** (experimental) | Type `/oncall` in any Claude Code session to move that conversation to Sesame, then pick it up by voice. |
 | **Zero extra runtime** | PowerShell on Windows, bash and Python 3 inside WSL. Nothing to `npm install`. |
 
 ## Install
@@ -111,6 +111,14 @@ and swaps the binary:
 Nothing here reverse-engineers Sesame's cloud protocol. Everything goes through
 Sesame Link's public CLI (`sesame-link start --claude-executable …`) and the
 files it generates for Claude Code.
+
+## Status
+
+Tested on Windows 11 with WSL 3.0.1, Ubuntu 26.04, Claude Code 2.1.292 and
+Sesame Link 0.1.27: sessions created from link.sesame.com run Windows Claude
+Code, every hook is accepted, and messages round-trip web → Claude → web. The
+`/oncall` hand-off is accepted by Link but has not yet been exercised end to
+end, so treat it as experimental. Reports from other setups are welcome.
 
 ## Limitations and notes
 

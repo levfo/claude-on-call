@@ -1,0 +1,10 @@
+#!/bin/bash
+# claude-on-call: start the sesame-link daemon with the Windows Claude Code shim.
+# Extra arguments go to `sesame-link start`.
+ONCALL_HOME="${ONCALL_HOME:-$HOME/.claude-on-call}"
+# shellcheck disable=SC1090
+. "$ONCALL_HOME/config"
+export PATH="$HOME/.local/bin:$ONCALL_HOME/bin:$PATH"
+# The folder the daemon starts in becomes the default workspace shown in Sesame.
+cd "$WIN_HOME" 2>/dev/null || cd ~
+exec sesame-link start --open-terminal off --claude-executable "$ONCALL_HOME/bin/claude-shim" "$@"

@@ -22,7 +22,7 @@ step() { printf '==> %s\n' "$1"; }
 
 step "Installing claude-on-call files to $ONCALL_HOME"
 mkdir -p "$ONCALL_HOME/bin" "$ONCALL_HOME/logs"
-for f in claude-shim hook-relay claude keepalive handoff rewrite_launch.py fix_payload.py; do
+for f in claude-shim hook-relay claude keepalive start-link handoff rewrite_launch.py fix_payload.py; do
     sed 's/\r$//' "$SRC/linux/$f" > "$ONCALL_HOME/bin/$f"
     chmod +x "$ONCALL_HOME/bin/$f"
 done
@@ -66,10 +66,13 @@ else
     step "Sesame Link already installed: $(sesame-link --version)"
 fi
 
-step "Starting Sesame Link with the Windows Claude Code shim"
-cd "$WIN_HOME"
-sesame-link stop >/dev/null 2>&1 || true
-sesame-link start --open-terminal off --claude-executable "$ONCALL_HOME/bin/claude-shim"
+if sesame-link status 2>/dev/null | grep -qE "isn't signed in|not signed in"; then
+    step "Not signed in to Sesame yet; the daemon starts after 'oncall login'"
+else
+    step "Starting Sesame Link with the Windows Claude Code shim"
+    sesame-link stop >/dev/null 2>&1 || true
+    "$ONCALL_HOME/bin/start-link"
+fi
 
 echo
 sesame-link status || true
