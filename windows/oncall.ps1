@@ -162,7 +162,14 @@ switch ($Command.ToLower()) {
         $dst = Join-Path $mgrDir "CLAUDE.md"
         if ((Test-Path $tpl) -and -not (Test-Path $dst)) { Copy-Item $tpl $dst }
         Write-Host "Manager folder: $mgrDir  (edit CLAUDE.md there to change how it manages)"
-        Run-Wsl -Folder $mgrDir "sesame-link claude $extra"
+        # Link refuses remote messages to a session until it has observed the session's
+        # permission mode in a turn, so start with an explicit allowed mode and a first
+        # prompt; the manager's opening reply is the warm-up.
+        $mode = "acceptEdits"
+        if ($Rest -contains "--permission-mode") { $mode = $null }
+        $modeArg = if ($mode) { "--permission-mode $mode" } else { "" }
+        $first = "You are now live. In one sentence say you are the team manager, then list the sessions you can see by name and whether each is idle or busy."
+        Run-Wsl -Folder $mgrDir "sesame-link claude $modeArg $extra -- $(Quote-Bash $first)"
     }
     "handoff"  {
         # Called by Claude Code's /oncall command:  oncall handoff <claude-session-id> [folder]
