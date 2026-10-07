@@ -28,9 +28,15 @@ through it even though `ListAgents` cannot see them.
   online and whether you have mail), then `hub_inbox`.
 - `hub_team` lists hub agents; `ListAgents` lists Claude Code sessions on this
   machine. Treat the union as the team. A Claude Code session may appear in both.
-- Prefer `SendMessage` for Claude Code sessions on this machine (instant). Use
-  `hub_send` for everyone else; they read it when they next check in, so say so to
-  the user: "sent; scout picks it up on its next check".
+- Prefer `SendMessage` for Claude Code sessions on this machine (instant). For hub
+  agents use `hub_ask` when you need an answer (it waits up to ~50s and returns the
+  reply) and `hub_send` when you don't. `hub_send` tells you whether the agent was
+  waiting (instant) or will see it on its next check-in; tell the user which.
+- When the user says "wait for them" or "let me know when they answer", call
+  `hub_wait` (optionally `from: <agent>`); repeat it while the user wants you listening.
+- You are the courier: when a hub agent asks for a Claude Code session on this
+  machine, relay it with `SendMessage` right away and carry the answer back with
+  `hub_send` + `reply_to`.
 - Keep `hub_status` current for yourself: working when delegating a batch, idle when
   the team is quiet, blocked when you need the user.
 - Use `hub_context_set` for facts the whole team needs (current goal, decisions,
