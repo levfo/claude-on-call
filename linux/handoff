@@ -54,12 +54,31 @@ export PATH="$HOME/.local/bin:$PATH"
 CLAUDECODE=1 CLAUDE_CODE_SESSION_ID="$1" CLAUDE_PID=$$ sesame-link open-sesame
 SH
 chmod +x "$DECOY_DIR/claude"
+list_ids() { sesame-link sessions 2>/dev/null | awk 'NR>1 && $1 ~ /^[0-9]+$/ {for (i=1;i<=NF;i++) if ($i ~ /^[0-9a-f]{8}$/) {print $i; break}}'; }
+BEFORE="$(list_ids)"
+
 "$DECOY_DIR/claude" "$SID"
 RC=$?
 rm -rf "$DECOY_DIR"
-if [ $RC -eq 0 ]; then
+[ $RC -eq 0 ] || exit $RC
+
+# 3. Confirm the new Link session actually appeared before anyone closes the original.
+NEW=""
+for _ in $(seq 1 25); do
+    for id in $(list_ids); do
+        case " $BEFORE " in *" $id "*) ;; *) NEW="$id" ;; esac
+    done
+    [ -n "$NEW" ] && break
+    sleep 1
+done
+if [ -z "$NEW" ]; then
     echo
-    echo "This conversation now continues in Sesame. You can close this Claude Code window;"
-    echo "pick the session up at https://link.sesame.com or by voice."
+    echo "WARNING: Sesame Link accepted the hand-off, but no new session has appeared yet."
+    echo "Sesame may be unreachable right now (check: oncall status). This conversation stays here."
+    exit 3
 fi
-exit $RC
+echo
+echo "NEW_SESSION=$NEW"
+echo "This conversation now continues in Sesame as session $NEW."
+echo "Pick it up at https://link.sesame.com or by voice."
+exit 0

@@ -53,11 +53,18 @@ switch ($Command.ToLower()) {
     }
     "handoff"  {
         # Called by Claude Code's /oncall command:  oncall handoff <claude-session-id> [folder]
-        if ($Rest.Count -lt 1) { Write-Host "usage: oncall handoff <claude-session-id> [folder]"; exit 2 }
+        if ($Rest.Count -lt 1) { Write-Host "usage: oncall handoff <claude-session-id> [folder] [claude-pid]"; exit 2 }
         $folder = if ($Rest.Count -ge 2 -and $Rest[1]) { $Rest[1] } else { (Get-Location).Path }
         # Claude Code's shell on Windows is Git Bash, whose $PWD looks like /c/Users/you.
         if ($folder -match '^/([A-Za-z])(/.*)?$') { $folder = $matches[1].ToUpper() + ":" + (($matches[2] -replace '/', '\') -replace '^$', '\') }
         Run-Wsl -Folder $folder "~/.claude-on-call/bin/handoff $(Quote-Bash $Rest[0])"
+        # Link ends the Claude Code it took over on Linux/macOS; here that process is on
+        # Windows, so end it ourselves, but only once the new session really exists.
+        if ($script:LastExit -eq 0 -and $Rest.Count -ge 3 -and $Rest[2] -match '^\d+$') {
+            Write-Host "Closing this Claude Code; the conversation continues in Sesame."
+            Start-Sleep -Seconds 2
+            Stop-Process -Id ([int]$Rest[2]) -Force -ErrorAction SilentlyContinue
+        }
     }
     "web"      { Start-Process "https://link.sesame.com" }
     "update"   {
