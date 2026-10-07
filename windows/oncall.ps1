@@ -55,6 +55,8 @@ switch ($Command.ToLower()) {
         # Called by Claude Code's /oncall command:  oncall handoff <claude-session-id> [folder]
         if ($Rest.Count -lt 1) { Write-Host "usage: oncall handoff <claude-session-id> [folder]"; exit 2 }
         $folder = if ($Rest.Count -ge 2 -and $Rest[1]) { $Rest[1] } else { (Get-Location).Path }
+        # Claude Code's shell on Windows is Git Bash, whose $PWD looks like /c/Users/you.
+        if ($folder -match '^/([A-Za-z])(/.*)?$') { $folder = $matches[1].ToUpper() + ":" + (($matches[2] -replace '/', '\') -replace '^$', '\') }
         Run-Wsl -Folder $folder "~/.claude-on-call/bin/handoff $(Quote-Bash $Rest[0])"
     }
     "web"      { Start-Process "https://link.sesame.com" }
