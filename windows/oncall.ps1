@@ -153,6 +153,17 @@ switch ($Command.ToLower()) {
         # Start Windows Claude Code in this folder as a session Sesame can see, attached here.
         Run-Wsl -Here "sesame-link claude $extra"
     }
+    "manager"  {
+        # A Claude Code session whose only job is directing the other sessions on this
+        # machine (ListAgents / SendMessage) and reporting back, for driving by voice.
+        $mgrDir = Join-Path $env:USERPROFILE "claude-on-call-manager"
+        New-Item -ItemType Directory -Force $mgrDir | Out-Null
+        $tpl = Join-Path $AppDir "manager\CLAUDE.md"
+        $dst = Join-Path $mgrDir "CLAUDE.md"
+        if ((Test-Path $tpl) -and -not (Test-Path $dst)) { Copy-Item $tpl $dst }
+        Write-Host "Manager folder: $mgrDir  (edit CLAUDE.md there to change how it manages)"
+        Run-Wsl -Folder $mgrDir "sesame-link claude $extra"
+    }
     "handoff"  {
         # Called by Claude Code's /oncall command:  oncall handoff <claude-session-id> [folder]
         if ($Rest.Count -lt 1) { Write-Host "usage: oncall handoff <claude-session-id> [folder] [claude-pid]"; exit 2 }
@@ -196,6 +207,7 @@ oncall - Claude Code on call. Reach your Windows Claude Code sessions by voice o
   oncall login               sign in to Sesame and add this PC
   oncall start | stop | restart
   oncall claude [args]       start Claude Code in this folder as a session Sesame can see, attached here
+  oncall manager             start a manager session that directs your other Claude Code sessions
   oncall sessions            list sessions;  oncall attach <id>  to attach one in this terminal
   oncall logs | doctor | config
   oncall web                 open link.sesame.com

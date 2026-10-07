@@ -172,6 +172,8 @@ if ($LASTEXITCODE -ne 0) { Fail "the WSL-side installer failed (see output above
 Step "Installing the 'oncall' command to $BinDir"
 Copy-Item (Join-Path $src "windows\oncall.ps1") (Join-Path $BinDir "oncall.ps1") -Force
 Copy-Item (Join-Path $src "windows\oncall.cmd") (Join-Path $BinDir "oncall.cmd") -Force
+New-Item -ItemType Directory -Force (Join-Path $AppDir "manager") | Out-Null
+Copy-Item (Join-Path $src "manager\CLAUDE.md") (Join-Path $AppDir "manager\CLAUDE.md") -Force
 @{ distro = $Distro; linuxUser = $LinuxUser; claudeExe = $claudeExe; installedAt = (Get-Date).ToString("o") } |
     ConvertTo-Json | Set-Content -Encoding UTF8 (Join-Path $AppDir "config.json")
 $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
@@ -214,6 +216,7 @@ Write-Host "claude-on-call is installed." -ForegroundColor Green
 Write-Host ""
 Write-Host "  oncall status            is this PC connected to Sesame?"
 Write-Host "  oncall claude            in a project folder: start Claude Code as a session Sesame can see"
+Write-Host "  oncall manager           start a manager session that directs your other sessions"
 Write-Host "  /oncall                  inside any Claude Code session: hand it to Sesame"
 Write-Host "  https://link.sesame.com  start, watch and talk to sessions from any device"
 Write-Host ""

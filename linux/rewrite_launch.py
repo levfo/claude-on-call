@@ -124,6 +124,11 @@ def main(argv):
                 # ("Held by the terminal"). Remote sessions don't need suggestions.
                 doc["promptSuggestionEnabled"] = False
                 doc.setdefault("env", {})["CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION"] = "0"
+                # Messages from other Claude Code sessions on this machine (the team
+                # manager pattern) are held for terminal approval by default when a
+                # session bypasses permissions. Nobody can approve them from Sesame,
+                # so accept them. ONCALL_CROSS_SESSION=hold restores the default.
+                doc["crossSessionInbound"] = os.environ.get("ONCALL_CROSS_SESSION", "accept")
             else:
                 for server in doc.get("mcpServers", {}).values():
                     rewrite_command(server, prefix)

@@ -71,6 +71,38 @@ Then open [link.sesame.com](https://link.sesame.com) or call your Sesame agent.
 Sessions started from the web or by voice open in the folder you choose and run
 Windows Claude Code too.
 
+### Manage a team of sessions by voice
+
+Claude Code sessions on one machine can message each other (`ListAgents`,
+`SendMessage`). `oncall manager` starts a session whose only job is to direct
+the others and report back, so you can run several projects through one voice
+conversation:
+
+```text
+oncall manager             # start the manager (it appears in Sesame like any session)
+```
+
+Then, by voice or on the web, talk to the manager: "what is everyone doing?",
+"tell the ramen session to run the tests and summarize", "when it's done, let me
+know". The manager delegates with `SendMessage`, asks to be notified when a session
+goes idle, and relays results. Its instructions live in
+`%USERPROFILE%\claude-on-call-manager\CLAUDE.md`; edit them to change how it manages.
+
+Two settings make this work without anyone clicking in terminals:
+
+* Sessions that bypass permissions hold messages from other sessions for approval
+  by default. claude-on-call sets `crossSessionInbound: "accept"` in every Link
+  session. Set it in your own `~/.claude/settings.json` too for sessions you start
+  by hand. Set `ONCALL_CROSS_SESSION=hold` in `~/.claude-on-call/config` (WSL) to
+  keep the default instead.
+* The manager and its workers should run in the same permission mode, or the
+  workers in a more permissive one, so delegated work does not stall on prompts
+  only the manager could see.
+
+Sesame cannot connect to custom MCP servers today, so the manager is the bridge:
+Sesame → Link → manager session → the rest of your sessions. A cross-vendor hub
+(an MCP server any agent can join) would be a separate project.
+
 ## How it works
 
 ```
