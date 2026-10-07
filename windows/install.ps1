@@ -31,7 +31,9 @@ param(
     [switch]$NoLogin
 )
 
-$ErrorActionPreference = "Stop"
+# "Continue", not "Stop": PowerShell 5.1 turns native commands' stderr into terminating
+# errors under Stop when output is redirected. Every native call below checks $LASTEXITCODE.
+$ErrorActionPreference = "Continue"
 $env:WSL_UTF8 = "1"   # wsl.exe prints UTF-16 by default; this makes its output readable here
 
 function Step($m) { Write-Host "==> $m" -ForegroundColor Cyan }
@@ -48,14 +50,23 @@ function Write-Lf([string]$Path, [string[]]$Lines) {
     [IO.File]::WriteAllText($Path, (($Lines -join "`n") + "`n"), (New-Object Text.UTF8Encoding $false))
 }
 function To-WslPath([string]$WindowsPath) {
-    $p = (& wsl.exe -d $Distro -- wslpath -u $WindowsPath 2>$null)
+    # wsl.exe hands the command to the Linux login shell, which eats backslashes;
+    # wslpath accepts forward slashes, so convert first.
+    $fwd = $WindowsPath -replace '\\', '/'
+    $p = (& wsl.exe -d $Distro -- wslpath -u $fwd 2>$null)
     if ($LASTEXITCODE -ne 0 -or -not $p) { Fail "could not translate path '$WindowsPath' for WSL" }
     return ($p -join "").Trim()
 }
 function Wsl-Root([string]$ScriptText) {
+    # Runs a multi-line bash script as root inside the distro. Returns its output
+    # lines; the exit code is left in $script:WslRootExit.
     $tmp = Join-Path $env:TEMP ("oncall-root-" + [guid]::NewGuid().ToString("n") + ".sh")
     Write-Lf $tmp ($ScriptText -split "`r?`n")
-    try { & wsl.exe -d $Distro -u root -- bash (To-WslPath $tmp); return $LASTEXITCODE } finally { Remove-Item $tmp -ErrorAction SilentlyContinue }
+    try {
+        $out = & wsl.exe -d $Distro -u root -- bash (To-WslPath $tmp) 2>&1
+        $script:WslRootExit = $LASTEXITCODE
+        return $out
+    } finally { Remove-Item $tmp -ErrorAction SilentlyContinue }
 }
 
 # ---------------------------------------------------------------- 1. WSL
@@ -126,8 +137,8 @@ if ! command -v tmux >/dev/null || ! command -v unzip >/dev/null || ! command -v
   apt-get update -qq && apt-get install -y -qq curl unzip tmux python3 ca-certificates >/dev/null
 fi
 "@
-$out = (& wsl.exe -d $Distro -u root -- bash -c "$(($rootScript -split "`r?`n") -join "; ")") 2>&1
-if ($LASTEXITCODE -ne 0) { Fail "preparing the Linux user failed:`n$out" }
+$out = Wsl-Root $rootScript
+if ($script:WslRootExit -ne 0) { Fail "preparing the Linux user failed:`n$($out -join "`n")" }
 if (($out -join "`n") -match "RESTART_NEEDED") {
     Note "Applying default user; restarting $Distro"
     & wsl.exe --terminate $Distro 2>$null | Out-Null
